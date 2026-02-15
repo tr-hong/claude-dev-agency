@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-dev-agency",
+  "description": "나만의 외주개발사 — 7 agents, 13 skills, 7 commands for full-service TDD development",
+  "owner": {
+    "name": "tr-hong"
+  },
+  "plugins": [
+    {
+      "name": "devco",
+      "source": "./",
+      "description": "7명의 전문 에이전트(concierge, planner, designer, developer, tester, director, ops)가 Golden Test 기반 TDD로 프로젝트를 운영하는 외주개발사 플러그인",
+      "version": "1.0.0",
+      "category": "productivity"
+    }
+  ]
+}
