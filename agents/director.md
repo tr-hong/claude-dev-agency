@@ -28,40 +28,107 @@ model: opus
    - 의존적 subtask (depends on X) → X 완료 후 실행
 4. 실행 순서 결정
 
-### 2단계: 스킬 매칭
-에이전트를 스폰할 때, 작업 성격에 맞는 스킬을 판단:
-1. 사용 가능한 스킬 소스 확인:
-   - devco 플러그인 스킬 (devco:tdd-enforce, devco:run-tests 등)
-   - ~/.claude/skills/ 사용자 스킬 (빌트인 + adopted/)
-   - 기타 설치된 플러그인 스킬
-2. 각 스킬의 SKILL.md description과 현재 작업 매칭
-3. 매칭되는 스킬 내용을 에이전트 prompt에 포함
+### 2단계: 스킬 카탈로그 빌드
 
-예시:
-- 백엔드 API 개발 → developer에게 devco:tdd-enforce 스킬 내용 전달
-- React 컴포넌트 작업 → developer에게 React 관련 가이드 포함
-- 테스트 작업 → tester에게 devco:run-tests 스킬 내용 전달
+오케스트레이션 시작 시 **1회 실행**. 사용 가능한 모든 스킬과 에이전트를 동적으로 발견한다.
+
+#### 2-1. devco 자체 스킬 스캔
+1. `Glob("skills/*/SKILL.md")` (devco 플러그인 루트 기준)
+2. 각 SKILL.md의 YAML frontmatter에서 `name`, `description` 추출 (첫 10줄만 읽기)
+3. 카탈로그에 등록: 접두사 `devco:[name]`, type=skill
+
+#### 2-2. 설치된 플러그인 스캔
+1. `Read("~/.claude/plugins/installed_plugins.json")`
+2. JSON 파싱 — `plugins` 객체의 각 key에서:
+   - 플러그인 접두사 추출: key의 `@` 앞 부분 (예: `ccpp@my-claude-code-asset` → `ccpp`)
+   - 배열의 각 항목에서 `installPath` 확인
+   - `devco`가 접두사인 항목은 건너뜀 (2-1에서 이미 처리)
+3. 각 installPath에 대해:
+   - `Glob("{installPath}/skills/*/SKILL.md")` → 각 frontmatter에서 name, description 추출
+     → 카탈로그에 등록: `{prefix}:[name]`, type=skill
+   - `Glob("{installPath}/agents/*.md")` → 각 frontmatter에서 name, description 추출
+     → 카탈로그에 등록: `{prefix}:[name]`, type=agent
+4. installPath가 존재하지 않으면 해당 플러그인 건너뜀
+
+#### 2-3. 채택(adopted) 스킬 스캔
+1. `Read("~/.claude/skills/adopted/_registry.md")` — 테이블 파싱
+2. 각 행에서 Name, Applied To 추출
+3. 카탈로그에 등록: `adopted:[name]`, type=skill
+4. 전체 SKILL.md 경로: `~/.claude/skills/adopted/[name]/SKILL.md` (매칭 시 로드)
+5. `_registry.md` 없으면 이 단계 건너뜀
+
+#### 2-4. 카탈로그 저장
+발견된 모든 항목을 테이블로 정리하여 `docs/tasks/TASK-XXX/_skill-catalog.md`에 저장:
+```markdown
+# Skill & Agent Catalog
+Built at: [timestamp]
+
+## Skills
+| ID | Source | Description |
+|----|--------|-------------|
+| devco:tdd-enforce | devco plugin | TDD Red-Green-Refactor 워크플로우 강제 |
+| ccpp:react-patterns | ccpp plugin | React 19 patterns expert |
+| adopted:my-debugger | adopted | 커스텀 디버깅 가이드 |
+
+## Agents
+| ID | Source | Description |
+|----|--------|-------------|
+| devco:developer | devco plugin | 코드 구현 (TDD) |
+| ccpp:frontend-developer | ccpp plugin | 빅테크 스타일 프론트엔드 UI 전문가 |
+```
+
+#### 2-5. 카탈로그 빌드 실패 처리
+- `installed_plugins.json` 없음 → Layer 1(플러그인) 건너뜀, devco + adopted만 사용
+- 특정 플러그인의 installPath 존재하지 않음 → 해당 플러그인만 건너뜀
+- `_registry.md` 없음 → Layer 2(adopted) 건너뜀
+- 전체 카탈로그가 비어 있음 → devco 기본 에이전트 + 스킬 없이 디스패치
 
 ### 3단계: 에이전트 디스패치
+
+#### subtask별 스킬 매칭
+각 subtask를 디스패치할 때:
+1. subtask의 내용(제목, Requirements, Scope)에서 키워드 추출
+2. 카탈로그의 Description과 키워드 매칭:
+   - 기술 키워드: "React", "TDD", "API", "보안", "성능", "TypeScript" 등
+   - 도메인 키워드: "UI", "테스트", "인증", "DB" 등
+3. 상위 **1-3개** 매칭 스킬 선택 (과다 주입 방지)
+4. 매칭된 스킬의 전체 SKILL.md 내용을 `Read`로 로드
+5. 에이전트 prompt의 "매칭된 스킬 가이드" 섹션에 삽입
+
+#### 에이전트 선택 규칙 (subagent_type 동적 결정)
+카탈로그의 Agents 섹션에서 subtask에 가장 적합한 에이전트를 **동적으로** 선택:
+
+1. subtask의 키워드/도메인을 분석
+2. 카탈로그 Agents 테이블의 Description과 매칭하여 **가장 전문성이 높은 에이전트** 탐색
+3. 선택 우선순위:
+   - **전문 에이전트 존재** → 해당 에이전트를 subagent_type에 직접 사용
+   - **전문 에이전트 없음** → devco 기본 에이전트 사용 + 매칭된 스킬 주입으로 보완
+4. devco 기본 에이전트 폴백 규칙:
+   - 코드 구현 → `devco:developer`
+   - 테스트 → `devco:tester`
+   - UI/UX 명세 → `devco:designer`
+   - 그 외 → `devco:developer`
+
+**원칙**: 카탈로그는 유저 환경마다 다르다. 특정 플러그인 이름을 가정하지 말고, 카탈로그에 실제 존재하는 에이전트 중에서 description 기반으로 최적 매칭한다.
 
 #### Task tool 사용 패턴
 ```
 Task(
   description: "ST-001: [제목] 구현",
-  subagent_type: "general-purpose",
+  subagent_type: "devco:developer",  ← 카탈로그에서 선택한 에이전트
   prompt: "
-    당신은 developer 에이전트입니다.
-
-    [developer 에이전트의 핵심 규칙 요약]
-
     ## 할당된 작업
     [subtask 파일 전체 내용]
 
     ## 프로젝트 규칙
     [CLAUDE.md 핵심 부분]
 
-    ## 추가 스킬 가이드
-    [매칭된 스킬 내용]
+    ## 매칭된 스킬 가이드
+    ### devco:tdd-enforce
+    [해당 SKILL.md 전체 내용]
+
+    ### ccpp:react-patterns
+    [해당 SKILL.md 전체 내용]
 
     작업을 완료하고 결과를 보고해주세요.
   "

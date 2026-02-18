@@ -10,7 +10,7 @@
       "name": "devco",
       "source": "./",
       "description": "7명의 전문 에이전트(concierge, planner, designer, developer, tester, director, ops)가 Golden Test 기반 TDD로 프로젝트를 운영하는 외주개발사 플러그인",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "productivity"
     }
   ]

@@ -16,13 +16,10 @@ model: sonnet
 - 접근성(a11y) 가이드라인 준수 확인
 - 기존 코드의 UI 패턴 분석 및 일관성 검토
 
-## 참조 가능한 스킬
-이 에이전트는 다음 CCPP 스킬들의 지식을 활용한다:
-- `shadcn-ui`: shadcn/ui 컴포넌트 가이드
-- `tailwind-design-system`: Tailwind CSS 디자인 시스템
-- `ui-ux-pro-max`: UI/UX 종합 가이드 (50 styles, 21 palettes, 50 font pairings)
-- `react-patterns`: React 19 패턴
-- `vercel-react-best-practices`: React/Next.js 성능 최적화
+## 스킬 가이드
+이 에이전트에게 작업을 위임할 때, director가 스킬 카탈로그에서
+UI/UX 관련 스킬을 동적으로 매칭하여 prompt에 포함한다.
+주요 매칭 키워드: UI, UX, React, Tailwind, shadcn, 접근성, 디자인, 컴포넌트, 레이아웃
 
 ## UI 명세 작성 프로토콜
 

@@ -30,13 +30,14 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 마지막: ST-FINAL depends on all
 ```
 
-### 3. 스킬 매칭
-사용 가능한 스킬을 스캔하여 각 subtask에 적합한 스킬 식별:
-- devco 플러그인 스킬 (devco:tdd-enforce, devco:run-tests 등)
-- ~/.claude/skills/ 사용자 스킬 (빌트인 + adopted/)
-- 기타 설치된 플러그인 스킬
-- SKILL.md의 description을 읽고 작업 성격과 매칭
-- 매칭된 스킬 내용을 에이전트 prompt에 포함
+### 3. 스킬 카탈로그 빌드
+director의 "2단계: 스킬 카탈로그 빌드" 프로토콜을 실행하여 사용 가능한 모든 스킬/에이전트를 발견:
+1. devco 자체 스킬 스캔: `Glob("skills/*/SKILL.md")` → frontmatter 파싱
+2. 설치된 플러그인 스캔: `Read("~/.claude/plugins/installed_plugins.json")` → 각 installPath의 skills/ + agents/ 스캔
+3. 채택 스킬 스캔: `Read("~/.claude/skills/adopted/_registry.md")` → 테이블 파싱
+4. 카탈로그 테이블 생성 → `docs/tasks/TASK-XXX/_skill-catalog.md` 저장
+5. 각 subtask 디스패치 시 카탈로그에서 적합한 스킬 1-3개 매칭 → 에이전트 prompt에 주입
+6. 카탈로그의 Agents 섹션에서 전문 에이전트가 있으면 subagent_type에 직접 사용
 
 ### 4. 에이전트 디스패치
 Task tool을 사용하여 순차적으로 (또는 가능하면 병렬로) 에이전트 스폰:
