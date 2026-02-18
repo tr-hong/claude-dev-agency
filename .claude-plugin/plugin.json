@@ -1,6 +1,6 @@
 {
   "name": "devco",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "나만의 외주개발사 (Dev Agency) — 7명의 전문 에이전트가 TDD 기반으로 프로젝트를 기획, 개발, 테스트, 보고하는 풀서비스 개발 에이전시 플러그인",
   "author": {
     "name": "tr-hong"
