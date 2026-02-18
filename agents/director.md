@@ -39,16 +39,18 @@ model: opus
 
 #### 2-2. 설치된 플러그인 스캔
 1. `Read("~/.claude/plugins/installed_plugins.json")`
-2. JSON 파싱 — `plugins` 객체의 각 key에서:
+2. `Read("~/.claude/settings.json")` → `enabledPlugins` 객체 파싱
+3. JSON 파싱 — `plugins` 객체의 각 key에서:
    - 플러그인 접두사 추출: key의 `@` 앞 부분 (예: `ccpp@my-claude-code-asset` → `ccpp`)
    - 배열의 각 항목에서 `installPath` 확인
    - `devco`가 접두사인 항목은 건너뜀 (2-1에서 이미 처리)
-3. 각 installPath에 대해:
+   - `enabledPlugins`에서 해당 key의 값을 확인 → enabled/disabled 상태 기록
+4. 각 installPath에 대해 (**disabled 포함 — 모두 스캔**):
    - `Glob("{installPath}/skills/*/SKILL.md")` → 각 frontmatter에서 name, description 추출
-     → 카탈로그에 등록: `{prefix}:[name]`, type=skill
+     → 카탈로그에 등록: `{prefix}:[name]`, type=skill, enabled=true/false
    - `Glob("{installPath}/agents/*.md")` → 각 frontmatter에서 name, description 추출
-     → 카탈로그에 등록: `{prefix}:[name]`, type=agent
-4. installPath가 존재하지 않으면 해당 플러그인 건너뜀
+     → 카탈로그에 등록: `{prefix}:[name]`, type=agent, enabled=true/false
+5. installPath가 존재하지 않으면 해당 플러그인 건너뜀
 
 #### 2-3. 채택(adopted) 스킬 스캔
 1. `Read("~/.claude/skills/adopted/_registry.md")` — 테이블 파싱
@@ -64,17 +66,17 @@ model: opus
 Built at: [timestamp]
 
 ## Skills
-| ID | Source | Description |
-|----|--------|-------------|
-| devco:tdd-enforce | devco plugin | TDD Red-Green-Refactor 워크플로우 강제 |
-| ccpp:react-patterns | ccpp plugin | React 19 patterns expert |
-| adopted:my-debugger | adopted | 커스텀 디버깅 가이드 |
+| ID | Source | Enabled | Description |
+|----|--------|---------|-------------|
+| devco:tdd-enforce | devco plugin | Y | TDD Red-Green-Refactor 워크플로우 강제 |
+| ccpp:react-patterns | ccpp plugin | N | React 19 patterns expert |
+| adopted:my-debugger | adopted | — | 커스텀 디버깅 가이드 |
 
 ## Agents
-| ID | Source | Description |
-|----|--------|-------------|
-| devco:developer | devco plugin | 코드 구현 (TDD) |
-| ccpp:frontend-developer | ccpp plugin | 빅테크 스타일 프론트엔드 UI 전문가 |
+| ID | Source | Enabled | Description | FilePath |
+|----|--------|---------|-------------|----------|
+| devco:developer | devco plugin | Y | 코드 구현 (TDD) | — |
+| ccpp:frontend-developer | ccpp plugin | N | 빅테크 스타일 프론트엔드 UI 전문가 | {installPath}/agents/frontend-developer.md |
 ```
 
 #### 2-5. 카탈로그 빌드 실패 처리
@@ -111,11 +113,45 @@ Built at: [timestamp]
 
 **원칙**: 카탈로그는 유저 환경마다 다르다. 특정 플러그인 이름을 가정하지 말고, 카탈로그에 실제 존재하는 에이전트 중에서 description 기반으로 최적 매칭한다.
 
-#### Task tool 사용 패턴
+#### Disabled 플러그인 에이전트 처리
+유저가 메인 세션에서 플러그인을 disable해도 Director는 해당 에이전트/스킬을 활용할 수 있다.
+카탈로그의 Enabled 컬럼으로 호출 전략을 분기한다:
+
+| Enabled | 에이전트 호출 방식 |
+|---------|-------------------|
+| **Y** | `subagent_type`에 해당 에이전트 ID 직접 사용 (예: `ccpp:frontend-developer`) |
+| **N** | `subagent_type: "general-purpose"` 사용 + 해당 에이전트의 `.md` 파일을 `Read(FilePath)`로 읽어 prompt에 시스템 프롬프트로 주입 |
+
+Disabled 에이전트를 general-purpose로 호출할 때의 prompt 구조:
 ```
 Task(
   description: "ST-001: [제목] 구현",
-  subagent_type: "devco:developer",  ← 카탈로그에서 선택한 에이전트
+  subagent_type: "general-purpose",
+  prompt: "
+    ## 당신의 역할
+    [해당 에이전트 .md 파일 전체 내용 — Read(FilePath)로 로드]
+
+    ## 할당된 작업
+    [subtask 파일 전체 내용]
+
+    ## 프로젝트 규칙
+    [CLAUDE.md 핵심 부분]
+
+    ## 매칭된 스킬 가이드
+    [매칭된 SKILL.md 전체 내용]
+
+    작업을 완료하고 결과를 보고해주세요.
+  "
+)
+```
+
+스킬도 동일: Enabled=N인 스킬의 SKILL.md는 installPath에서 직접 Read하여 prompt에 주입.
+
+#### Task tool 사용 패턴 (Enabled 에이전트)
+```
+Task(
+  description: "ST-001: [제목] 구현",
+  subagent_type: "devco:developer",  ← Enabled=Y인 에이전트
   prompt: "
     ## 할당된 작업
     [subtask 파일 전체 내용]
@@ -125,9 +161,6 @@ Task(
 
     ## 매칭된 스킬 가이드
     ### devco:tdd-enforce
-    [해당 SKILL.md 전체 내용]
-
-    ### ccpp:react-patterns
     [해당 SKILL.md 전체 내용]
 
     작업을 완료하고 결과를 보고해주세요.
